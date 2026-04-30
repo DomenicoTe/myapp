@@ -14,10 +14,9 @@
     "extensions": "node extensions",
     "packages": "node packages",
     "start": "nodemon index.js",
-    "cicd": "node bin cicd",
-    "store": "node bin store",
-    "archive": "node bin archive",
-    "build": "pkg . --out-path dist"
+    "cicd": "npm ci",
+    "build": "pkg . --targets node24-linux-x64 --out-path dist",
+    "post-release": "node bin post-release"
   },
   "keywords": [],
   "author": "",
@@ -31,8 +30,7 @@
     "express": "^4.17.1",
     "joi": "^17.0.0",
     "nodemon": "^3.1.14",
-    "shelljs": "^0.10.0",
-    "sonarqube-scanner": "^4.3.6"
+    "shelljs": "^0.10.0"
   },
   "workspaces": [
     "packages/*",
@@ -44,9 +42,6 @@
     "@myapp/plugin_counter": "1.0.0",
     "@myapp/plugin_hello": "1.0.0",
     "@myapp/plugin_logger": "1.0.0",
-    "@myapp/plugin_maker": "1.0.0",
-    "archiver": "^7.0.1",
-    "mime-types": "^3.0.2",
-    "minio": "^8.0.7"
+    "@myapp/plugin_maker": "1.0.0"
   }
 }

@@ -1,29 +1,13 @@
 require('dotenv').config({ quiet: true });
+const shell = require('shelljs');
 const { program } = require('commander');
-program.command('cicd')
-    .description('Run the CI/CD pipeline')
+program.command('post-release')
+    .description('Run post-release tasks')
     .action(() => {
-        require('./cicd.js')()
+        shell.echo('Running post-release tasks...');
+        shell.rm('-rf', 'dist');
+        shell.rm('-rf', '*.zip');
+        shell.echo('Post-release tasks completed successfully!');
     });
-program.command('archive')
-    .description('Create a release archive')
-    .option('-p, --path <path>', 'Path to the directory to archive', 'dist/')
-    .action((options) => {
-        
-        require('./archive.js')(options.path)
-    });
-program.command('store')
-    .description('Run the plugin store')
-    //Add options -a and --artifact
-    .option('-a, --artifact <path>', 'Path to the artifact to upload')
-    .action((options) => {
-        console.log(`Archiving directory: ${JSON.stringify(options)}`);
-        if(!options.artifact) {
-            console.log('Error: Artifact path is required');
-            process.exit(1);
-        }
-        require('./minio')(options.artifact)
-    });
-
 program.parse(process.argv);
 if (!process.argv.slice(2).length) program.help();
