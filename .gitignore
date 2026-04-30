@@ -1,0 +1,5 @@
+.env
+dist/
+scannerwork/
+node_modules/
+**/*.zip

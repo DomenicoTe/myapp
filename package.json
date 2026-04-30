@@ -1,0 +1,52 @@
+{
+  "name": "myapp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "bin": {
+    "myapp": "./index.js"
+  },
+  "scripts": {
+    "up:major": "npm version major -m \"Bump major version to %s\"",
+    "up:minor": "npm version minor -m \"Bump minor version to %s\"",
+    "up:patch": "npm version patch -m \"Bump patch version to %s\"",
+    "up:dev": "npm version prerelease --preid=dev -m \"Bump dev version to %s\"",
+    "extensions": "node extensions",
+    "packages": "node packages",
+    "start": "nodemon index.js",
+    "cicd": "node bin cicd",
+    "store": "node bin store",
+    "archive": "node bin archive",
+    "build": "pkg . --out-path dist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@myapp/debug": "1.0.1",
+    "@yao-pkg/pkg": "^6.19.0",
+    "commander": "^10.0.1",
+    "dotenv": "^16.0.0",
+    "express": "^4.17.1",
+    "joi": "^17.0.0",
+    "nodemon": "^3.1.14",
+    "shelljs": "^0.10.0",
+    "sonarqube-scanner": "^4.3.6"
+  },
+  "workspaces": [
+    "packages/*",
+    "extensions/*"
+  ],
+  "dependencies": {
+    "@myapp/module_check": "1.0.0",
+    "@myapp/module_update": "1.0.0",
+    "@myapp/plugin_counter": "1.0.0",
+    "@myapp/plugin_hello": "1.0.0",
+    "@myapp/plugin_logger": "1.0.0",
+    "@myapp/plugin_maker": "1.0.0",
+    "archiver": "^7.0.1",
+    "mime-types": "^3.0.2",
+    "minio": "^8.0.7"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@myapp/debug",
+  "version": "1.0.1",
+  "main": "index.js",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "debug": "^4.3.4"
+  }
+}
