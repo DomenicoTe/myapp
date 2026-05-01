@@ -1,9 +1,9 @@
 def COLOR_MAP = [
-  SUCCESS: 'good',
-  FAILURE: 'danger',
   ABORTED: 'warning',
-  UNSTABLE: 'warning',
-  NOT_BUILT: 'warning'
+  FAILURE: 'danger',
+  NOT_BUILT: 'warning',
+  SUCCESS: 'good',
+  UNSTABLE: 'warning'
 ]
 pipeline {
   agent any
@@ -12,9 +12,11 @@ pipeline {
   }
   environment {
     SHELL = '/bin/bash'
-    image = "158394349423.dkr.ecr.us-east-1.amazonaws.com/myapp"
-    registry = "https://158394349423.dkr.ecr.us-east-1.amazonaws.com"
-    registryCredential="ecr:us-east-1:myaws"
+    image = '158394349423.dkr.ecr.us-east-1.amazonaws.com/myapp'
+    registry = 'https://158394349423.dkr.ecr.us-east-1.amazonaws.com'
+    registryCredential = 'ecr:us-east-1:myaws'
+    cluster = "EcsClusterName"
+    service = "EcsServiceName"
   }
   options {
     timeout(time: 30, unit: 'MINUTES')
@@ -108,6 +110,13 @@ pipeline {
             dockerImage.push("v1.0.${env.BUILD_NUMBER}")
             dockerImage.push("latest")
           }
+        }
+      }
+    }
+    stage('Delete Images') {
+      steps {
+        script {
+          sh 'docker rmi -f (docker images -a -q)'
         }
       }
     }

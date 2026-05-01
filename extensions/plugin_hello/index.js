@@ -1,4 +1,9 @@
-const debug = require('@myapp/debug')('plugin_hello');
+const express = require('express');
 
-debug('Plugin hello loaded');
-// Non esporta nulla, solo side effect di debug
+const router = express.Router();
+
+router.get('/', (req, res) => {
+    res.json({ plugin: "hello", status: 'ok' });
+});
+
+module.exports = router;
