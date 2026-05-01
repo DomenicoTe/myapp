@@ -1,7 +1,17 @@
+def COLOR_MAP = [
+  SUCCESS: 'good',
+  FAILURE: 'danger',
+  ABORTED: 'warning',
+  UNSTABLE: 'warning',
+  NOT_BUILT: 'warning'
+]
 pipeline {
   agent any
   tools {
     nodejs 'NODE24'
+  }
+  environment {
+    SHELL = '/bin/bash'
   }
   options {
     timeout(time: 30, unit: 'MINUTES')
@@ -12,6 +22,7 @@ pipeline {
         echo 'Check dependencies and prepare environment...'
         sh 'node -v'
         sh 'npm -v'
+        sh "mongodump --version"
       }
     }
     stage('Fetching code') {
@@ -29,7 +40,7 @@ pipeline {
     }
     stage('Install dependencies') {
       steps {
-        sh 'set -euo pipefail && npm ci'
+        sh 'npm ci'
       }
       post {
         success {
@@ -43,7 +54,7 @@ pipeline {
     stage('Testing') {
       steps {
         timeout(time: 10, unit: 'MINUTES') {
-          sh 'set -euo pipefail && npm test -- --coverage'
+          sh 'npm test -- --coverage'
           sh 'test -s coverage/lcov.info'
         }
       }
@@ -60,7 +71,6 @@ pipeline {
       steps {
         timeout(time: 10, unit: 'MINUTES') {
           sh '''
-            set -euo pipefail
             npm run lint:report
             test -s eslint-report.json
           '''
@@ -74,32 +84,26 @@ pipeline {
     }
     stage('Code Analysis SonarQube') {
       steps {
-        def scannerHome = tool 'SQUBE8.1'
-        withSonarQubeEnv('SonarServer') {
-          sh """
-            set -euo pipefail
-            ${scannerHome}/bin/sonar-scanner \
-              -Dsonar.projectKey=${env.JOB_NAME} \
-              -Dsonar.projectName=${env.JOB_NAME}-jenkins \
-              -Dsonar.projectVersion=1.0 \
-              -Dsonar.sources=. \
-              -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-              -Dsonar.javascript.eslint.reportPaths=eslint-report.json
-          """
-        }
-      }
-      post {
-        success {
-          echo 'SonarQube analysis completed successfully.'
-        }
-        failure {
-            echo 'SonarQube analysis failed. Please check the SonarQube logs for details.'
+        script {
+          def scannerHome = tool 'SQUBE8.1'
+          withSonarQubeEnv('SonarServer') {
+            sh """
+              ${scannerHome}/bin/sonar-scanner \
+                -Dsonar.projectKey=${env.JOB_NAME} \
+                -Dsonar.projectName=${env.JOB_NAME}-jenkins \
+                -Dsonar.projectVersion=1.0 \
+                -Dsonar.sources=. \
+                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                -Dsonar.javascript.eslint.reportPaths=eslint-report.json \
+                -Dsonar.exclusions=coverage/**,dist/**,node_modules/** 
+            """
+          }
         }
       }
     }
     stage('Quality Gate') {
       steps {
-        timeout(time: 5, unit: 'MINUTES'){
+        timeout(time: 5, unit: 'MINUTES') {
           waitForQualityGate abortPipeline: true
         }
       }
@@ -127,29 +131,70 @@ pipeline {
         }
       }
     }
-      stage('Compress as tgz') {
-        steps {
-          sh 'tar -czf $JOB_NAME_$BUILD_NUMBER.tgz dist'
-        }
-        post {
-          success {
-            archiveArtifacts artifacts: "$JOB_NAME_$BUILD_NUMBER.tgz"
-          }
+    stage('Compress as tgz') {
+      steps {
+        sh """
+          tar -czf ${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz dist
+        """
+      }
+      post {
+        success {
+          archiveArtifacts artifacts: "${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz"
         }
       }
-      stage('Post-release tasks') {
-        steps {
-          sh '''
-            set -euo pipefail
-            [ -d dist ] && rm -rf dist
-            [ -f $JOB_NAME_$BUILD_NUMBER.tgz ] && rm -f $JOB_NAME_$BUILD_NUMBER.tgz
-          '''
-        }
-        post {
-          success {
-            echo 'Post-release tasks completed successfully.'
-          }
+    }
+    stage('Minio Release') {
+      steps {
+        minio bucket: 'artifacts',
+          credentialsId: 'myminio',
+          host: 'http://192.168.179.119:9100/',
+          includes: "${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz",
+          targetFolder: '/'
+      }
+    }
+    stage('Nexus Release') {
+      steps {
+        nexusArtifactUploader(
+          nexusVersion: 'nexus3',
+          protocol: 'http',
+          nexusUrl: '192.168.179.119:8081/',
+          groupId: 'QA',
+          version: "1.0.${env.BUILD_NUMBER}",
+          repository: 'vprofile-project',
+          credentialsId: 'mynexus',
+          artifacts: [
+              [
+                artifactId: "${env.JOB_NAME}",
+                classifier: '',
+                file: "${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz",
+                type: 'tgz'
+              ]
+          ]
+        )
+      }
+    }
+    stage('Post-release tasks') {
+      steps {
+        sh """
+          [ -d dist ] && rm -rf dist
+          [ -f ${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz ] && rm -f ${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz
+        """
+      }
+      post {
+        success {
+          echo 'Post-release tasks completed successfully.'
         }
       }
+    }
+  }
+  post {
+    always {
+      echo 'Sending notification...'
+      slackSend(
+        channel: '#sns-jenkins',
+        color: COLOR_MAP[currentBuild.currentResult],
+        message: "Build ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${currentBuild.currentResult}\n${env.BUILD_URL}\n"
+      )
+    }
   }
 }
