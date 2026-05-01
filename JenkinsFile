@@ -12,6 +12,9 @@ pipeline {
   }
   environment {
     SHELL = '/bin/bash'
+    image = "158394349423.dkr.ecr.us-east-1.amazonaws.com/myapp"
+    registry = "https://158394349423.dkr.ecr.us-east-1.amazonaws.com"
+    registryCredential="ecr:us-east-1:myaws"
   }
   options {
     timeout(time: 30, unit: 'MINUTES')
@@ -22,33 +25,16 @@ pipeline {
         echo 'Check dependencies and prepare environment...'
         sh 'node -v'
         sh 'npm -v'
-        sh "mongodump --version"
       }
     }
     stage('Fetching code') {
       steps {
-        git url: 'https://github.com/DomenicoTe/myapp.git', branch: 'jenkins'
-      }
-      post {
-        success {
-          echo 'Code fetched successfully.'
-        }
-        failure {
-          echo 'Failed to fetch code. Please check the repository URL and branch name.'
-        }
+        git url: 'https://github.com/DomenicoTe/myapp.git', branch: 'jdocker'
       }
     }
     stage('Install dependencies') {
       steps {
         sh 'npm ci'
-      }
-      post {
-        success {
-          echo 'Dependencies installed successfully.'
-        }
-        failure {
-          echo 'Failed to install dependencies. Please check the npm logs for details.'
-        }
       }
     }
     stage('Testing') {
@@ -58,28 +44,13 @@ pipeline {
           sh 'test -s coverage/lcov.info'
         }
       }
-      post {
-        success {
-          echo 'Tests passed successfully.'
-        }
-        failure {
-          echo 'Tests failed. Please check the test logs for details.'
-        }
-      }
     }
     stage('Code Analysis ESLint') {
       steps {
-        timeout(time: 10, unit: 'MINUTES') {
           sh '''
             npm run lint:report
             test -s eslint-report.json
           '''
-        }
-      }
-      post {
-        success {
-          echo 'Code analysis completed successfully.'
-        }
       }
     }
     stage('Code Analysis SonarQube') {
@@ -107,14 +78,6 @@ pipeline {
           waitForQualityGate abortPipeline: true
         }
       }
-      post {
-        success {
-          echo 'Quality gate passed successfully.'
-        }
-        failure {
-          echo 'Quality gate failed. Please check the SonarQube dashboard for details.'
-        }
-      }
     }
     stage('Build') {
       steps {
@@ -131,58 +94,20 @@ pipeline {
         }
       }
     }
-    stage('Compress as tgz') {
+    stage('Docker Build'){
       steps {
-        sh """
-          tar -czf ${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz dist
-        """
-      }
-      post {
-        success {
-          archiveArtifacts artifacts: "${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz"
+        script {
+          dockerImage = docker.build( image + ":v1.0.${env.BUILD_NUMBER}", "-f Dockerfile .")
         }
       }
     }
-    stage('Minio Release') {
+    stage('Docker Push Nexus'){
       steps {
-        minio bucket: 'artifacts',
-          credentialsId: 'myminio',
-          host: 'http://192.168.179.119:9100/',
-          includes: "${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz",
-          targetFolder: '/'
-      }
-    }
-    stage('Nexus Release') {
-      steps {
-        nexusArtifactUploader(
-          nexusVersion: 'nexus3',
-          protocol: 'http',
-          nexusUrl: '192.168.179.119:8081/',
-          groupId: 'QA',
-          version: "1.0.${env.BUILD_NUMBER}",
-          repository: 'vprofile-project',
-          credentialsId: 'mynexus',
-          artifacts: [
-              [
-                artifactId: "${env.JOB_NAME}",
-                classifier: '',
-                file: "${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz",
-                type: 'tgz'
-              ]
-          ]
-        )
-      }
-    }
-    stage('Post-release tasks') {
-      steps {
-        sh """
-          [ -d dist ] && rm -rf dist
-          [ -f ${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz ] && rm -f ${env.JOB_NAME}_${env.BUILD_NUMBER}.tgz
-        """
-      }
-      post {
-        success {
-          echo 'Post-release tasks completed successfully.'
+        script {
+          docker.withRegistry(registry, registryCredential) {
+            dockerImage.push("v1.0.${env.BUILD_NUMBER}")
+            dockerImage.push("latest")
+          }
         }
       }
     }
