@@ -7,7 +7,7 @@ pipeline{
   stages{
       stage("Fetching code") {
         steps{
-          git branch 'jenkins', url: 'https://github.com/DomenicoTe/myapp.git'
+          git url: 'https://github.com/DomenicoTe/myapp.git', branch: 'jenkins'
         }
       }
 
