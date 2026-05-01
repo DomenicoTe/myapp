@@ -17,7 +17,8 @@
     "cicd": "npm ci",
     "build": "pkg . --targets node24-linux-x64 --out-path dist",
     "post-release": "node bin post-release",
-    "test": "jest"
+    "test": "jest",
+    "lint": "eslint ."
   },
   "keywords": [],
   "author": "",
@@ -28,6 +29,7 @@
     "@yao-pkg/pkg": "^6.19.0",
     "commander": "^10.0.1",
     "dotenv": "^16.0.0",
+    "eslint": "^10.2.1",
     "express": "^4.17.1",
     "jest": "^30.3.0",
     "joi": "^17.0.0",
