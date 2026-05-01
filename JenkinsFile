@@ -1,0 +1,20 @@
+pipeline{
+  agent any
+  tools{
+    nodejs 'NODE24'
+  }
+
+  stages{
+      stage("Fetching code") {
+        steps{
+          git branch 'jenkins', url: 'https://github.com/DomenicoTe/myapp.git'
+        }
+      }
+
+      // stage("Testing") {
+      //   steps{
+      //     sh 'npm test'
+      //   }
+      // }
+  }
+}
