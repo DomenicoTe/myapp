@@ -11,10 +11,59 @@ pipeline{
         }
       }
 
-      // stage("Testing") {
-      //   steps{
-      //     sh 'npm test'
-      //   }
-      // }
+      stage("Install dependencies") {
+        steps{
+          sh 'npm ci'
+        }
+        post {
+          success {
+            echo "Dependencies installed successfully."
+          }
+        }
+      }
+
+      stage("Testing") {
+        steps{
+          sh 'npm test'
+        }
+        post {
+          success {
+            echo "Tests passed successfully."
+          }
+        }
+      }
+
+      stage("Build") {
+        steps{
+          sh 'npm run build'
+        }
+        post {
+          success {
+            echo "Build completed successfully."
+          }
+        }
+      }
+      stage ("Compress as tgz") {
+        steps{
+          sh 'tar -czf dist.tgz dist'
+        }
+        post {
+          success {
+            echo "Compression completed successfully."
+            archiveArtifacts artifacts: 'dist.tgz', fingerprint: true
+          }
+        }
+      }
+      stage ("Post-release tasks") {
+        steps{
+          sh 'rm -rf dist'
+          sh 'rm -rf *.tgz'
+        }
+        post {
+          success {
+            echo "Post-release tasks completed successfully."
+          }
+        }
+      }
   }
 }

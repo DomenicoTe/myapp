@@ -6,7 +6,7 @@ program.command('post-release')
     .action(() => {
         shell.echo('Running post-release tasks...');
         shell.rm('-rf', 'dist');
-        shell.rm('-rf', '*.zip');
+        shell.rm('-rf', '*.tgz');
         shell.echo('Post-release tasks completed successfully!');
     });
 program.parse(process.argv);
