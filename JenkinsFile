@@ -1,77 +1,153 @@
-pipeline{
+pipeline {
   agent any
-  tools{
+  tools {
     nodejs 'NODE24'
   }
-
-  stages{
-      stage("Fetching code") {
-        steps{
-          git url: 'https://github.com/DomenicoTe/myapp.git', branch: 'jenkins'
+  options {
+    timeout(time: 30, unit: 'MINUTES')
+  }
+  stages {
+    stage('Preparation') {
+      steps {
+        echo 'Check dependencies and prepare environment...'
+        sh 'node -v'
+        sh 'npm -v'
+      }
+    }
+    stage('Fetching code') {
+      steps {
+        git url: 'https://github.com/DomenicoTe/myapp.git', branch: 'jenkins'
+      }
+      post {
+        success {
+          echo 'Code fetched successfully.'
+        }
+        failure {
+          echo 'Failed to fetch code. Please check the repository URL and branch name.'
         }
       }
-
-      stage("Install dependencies") {
-        steps{
-          sh 'npm ci'
-          sh 'npx eslint --init'
+    }
+    stage('Install dependencies') {
+      steps {
+        sh 'set -euo pipefail && npm ci'
+      }
+      post {
+        success {
+          echo 'Dependencies installed successfully.'
         }
-        post {
-          success {
-            echo "Dependencies installed successfully."
-          }
+        failure {
+          echo 'Failed to install dependencies. Please check the npm logs for details.'
         }
       }
-
-      stage("Testing") {
-        steps{
-          sh 'npm test'
-        }
-        post {
-          success {
-            echo "Tests passed successfully."
-          }
+    }
+    stage('Testing') {
+      steps {
+        timeout(time: 10, unit: 'MINUTES') {
+          sh 'set -euo pipefail && npm test -- --coverage'
+          sh 'test -s coverage/lcov.info'
         }
       }
-      stage("Code Analysis ESLint") {
-        steps{
-          sh 'npm run lint'
+      post {
+        success {
+          echo 'Tests passed successfully.'
         }
-        post {
-          success {
-            echo "Code analysis completed successfully."
-          }
+        failure {
+          echo 'Tests failed. Please check the test logs for details.'
         }
       }
-      stage("Build") {
-        steps{
+    }
+    stage('Code Analysis ESLint') {
+      steps {
+        timeout(time: 10, unit: 'MINUTES') {
+          sh '''
+            set -euo pipefail
+            npm run lint:report
+            test -s eslint-report.json
+          '''
+        }
+      }
+      post {
+        success {
+          echo 'Code analysis completed successfully.'
+        }
+      }
+    }
+    stage('Code Analysis SonarQube') {
+      steps {
+        def scannerHome = tool 'SQUBE8.1'
+        withSonarQubeEnv('SonarServer') {
+          sh """
+            set -euo pipefail
+            ${scannerHome}/bin/sonar-scanner \
+              -Dsonar.projectKey=${env.JOB_NAME} \
+              -Dsonar.projectName=${env.JOB_NAME}-jenkins \
+              -Dsonar.projectVersion=1.0 \
+              -Dsonar.sources=. \
+              -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+              -Dsonar.javascript.eslint.reportPaths=eslint-report.json
+          """
+        }
+      }
+      post {
+        success {
+          echo 'SonarQube analysis completed successfully.'
+        }
+        failure {
+            echo 'SonarQube analysis failed. Please check the SonarQube logs for details.'
+        }
+      }
+    }
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 5, unit: 'MINUTES'){
+          waitForQualityGate abortPipeline: true
+        }
+      }
+      post {
+        success {
+          echo 'Quality gate passed successfully.'
+        }
+        failure {
+          echo 'Quality gate failed. Please check the SonarQube dashboard for details.'
+        }
+      }
+    }
+    stage('Build') {
+      steps {
+        timeout(time: 15, unit: 'MINUTES') {
           sh 'npm run build'
         }
+      }
+      post {
+        success {
+          echo 'Build completed successfully.'
+        }
+        failure {
+            echo 'Build failed. Please check the build logs for details.'
+        }
+      }
+    }
+      stage('Compress as tgz') {
+        steps {
+          sh 'tar -czf $JOB_NAME_$BUILD_NUMBER.tgz dist'
+        }
         post {
           success {
-            echo "Build completed successfully."
+            archiveArtifacts artifacts: "$JOB_NAME_$BUILD_NUMBER.tgz"
           }
         }
       }
-      stage ("Compress as tgz") {
-        steps{
-          sh 'tar -czf dist.tgz dist'
+      stage('Post-release tasks') {
+        steps {
+          sh '''
+            set -euo pipefail
+            [ -d dist ] && rm -rf dist
+            [ -f $JOB_NAME_$BUILD_NUMBER.tgz ] && rm -f $JOB_NAME_$BUILD_NUMBER.tgz
+          '''
         }
         post {
           success {
-            echo "Compression completed successfully."
-            archiveArtifacts artifacts: 'dist.tgz', fingerprint: true
-          }
-        }
-      }
-      stage ("Post-release tasks") {
-        steps{
-          sh 'rm -rf dist'
-          sh 'rm -rf *.tgz'
-        }
-        post {
-          success {
-            echo "Post-release tasks completed successfully."
+            echo 'Post-release tasks completed successfully.'
           }
         }
       }

@@ -16,9 +16,9 @@
     "start": "nodemon index.js",
     "cicd": "npm ci",
     "build": "pkg . --targets node24-linux-x64 --out-path dist",
-    "post-release": "node bin post-release",
     "test": "jest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "lint:report": "eslint . -f json -o eslint-report.json"
   },
   "keywords": [],
   "author": "",
@@ -28,7 +28,6 @@
     "@eslint/js": "^10.0.1",
     "@myapp/debug": "1.0.1",
     "@yao-pkg/pkg": "^6.19.0",
-    "commander": "^10.0.1",
     "dotenv": "^16.0.0",
     "eslint": "^10.2.1",
     "express": "^4.17.1",
