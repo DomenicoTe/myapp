@@ -5,75 +5,90 @@ def COLOR_MAP = [
   SUCCESS: 'good',
   UNSTABLE: 'warning'
 ]
+
 pipeline {
   agent any
+
   tools {
     nodejs 'NODE24'
   }
+
   environment {
     SHELL = '/bin/bash'
-    image = '158394349423.dkr.ecr.us-east-1.amazonaws.com/myapp'
-    registry = 'https://158394349423.dkr.ecr.us-east-1.amazonaws.com'
-    registryCredential = 'ecr:us-east-1:myaws'
-    cluster = "EcsClusterName"
-    service = "EcsServiceName"
+    IMAGE = '158394349423.dkr.ecr.us-east-1.amazonaws.com/myapp'
+    REGISTRY = 'https://158394349423.dkr.ecr.us-east-1.amazonaws.com'
+    REGISTRY_CREDENTIAL = 'ecr:us-east-1:myaws'
+    CLUSTER = 'myapp-cluster'
+    SERVICE = 'myapp-service'
+    VERSION = "v1.0.${env.BUILD_NUMBER}"
   }
+
   options {
     timeout(time: 30, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '10'))
   }
+
   stages {
-    stage('Preparation') {
-      steps {
-        echo 'Check dependencies and prepare environment...'
-        sh 'node -v'
-        sh 'npm -v'
-      }
-    }
-    stage('Fetching code') {
+
+    stage('Checkout') {
       steps {
         git url: 'https://github.com/DomenicoTe/myapp.git', branch: 'jdocker'
       }
     }
-    stage('Install dependencies') {
+
+    stage('Install & Verify') {
       steps {
-        sh 'npm ci'
+        sh '''
+          node -v
+          npm -v
+          npm ci
+        '''
       }
     }
-    stage('Testing') {
+
+    stage('Test') {
       steps {
         timeout(time: 10, unit: 'MINUTES') {
-          sh 'npm test -- --coverage'
-          sh 'test -s coverage/lcov.info'
+          sh '''
+            npm test -- --coverage
+            test -s coverage/lcov.info
+          '''
+        }
+      }
+      post {
+        always {
+          junit '**/junit.xml'
         }
       }
     }
-    stage('Code Analysis ESLint') {
+
+    stage('Lint') {
       steps {
-          sh '''
-            npm run lint:report
-            test -s eslint-report.json
-          '''
+        sh '''
+          npm run lint:report
+          test -s eslint-report.json
+        '''
       }
     }
-    stage('Code Analysis SonarQube') {
+
+    stage('SonarQube') {
       steps {
         script {
           def scannerHome = tool 'SQUBE8.1'
           withSonarQubeEnv('SonarServer') {
             sh """
               ${scannerHome}/bin/sonar-scanner \
-                -Dsonar.projectKey=${env.JOB_NAME} \
-                -Dsonar.projectName=${env.JOB_NAME}-jenkins \
-                -Dsonar.projectVersion=1.0 \
-                -Dsonar.sources=. \
-                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-                -Dsonar.javascript.eslint.reportPaths=eslint-report.json \
-                -Dsonar.exclusions=coverage/**,dist/**,node_modules/** 
+              -Dsonar.projectKey=${env.JOB_NAME} \
+              -Dsonar.sources=. \
+              -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+              -Dsonar.javascript.eslint.reportPaths=eslint-report.json \
+              -Dsonar.exclusions=coverage/**,dist/**,node_modules/**
             """
           }
         }
       }
     }
+
     stage('Quality Gate') {
       steps {
         timeout(time: 5, unit: 'MINUTES') {
@@ -81,54 +96,63 @@ pipeline {
         }
       }
     }
-    stage('Build') {
+
+    stage('Build App') {
       steps {
-        timeout(time: 15, unit: 'MINUTES') {
-          sh 'npm run build'
-        }
-      }
-      post {
-        success {
-          echo 'Build completed successfully.'
-        }
-        failure {
-            echo 'Build failed. Please check the build logs for details.'
-        }
+        sh 'npm run build'
       }
     }
-    stage('Docker Build'){
+
+    stage('Docker Build & Push') {
       steps {
         script {
-          dockerImage = docker.build( image + ":v1.0.${env.BUILD_NUMBER}", "-f Dockerfile .")
-        }
-      }
-    }
-    stage('Docker Push Nexus'){
-      steps {
-        script {
-          docker.withRegistry(registry, registryCredential) {
-            dockerImage.push("v1.0.${env.BUILD_NUMBER}")
+          def dockerImage = docker.build("${IMAGE}:${VERSION}")
+
+          docker.withRegistry(REGISTRY, REGISTRY_CREDENTIAL) {
+            dockerImage.push(VERSION)
             dockerImage.push("latest")
           }
         }
       }
     }
-    stage('Delete Images') {
+    stage('Deploy ECS (Real Best Practice)') {
       steps {
-        script {
-          sh 'docker rmi -f (docker images -a -q)'
+        withAWS(region: 'us-east-1', credentials: 'myaws') {
+          sh """
+            set -e
+
+            aws ecs describe-task-definition \
+              --task-definition myapp-task \
+              --query taskDefinition > task-def.json
+
+            jq --arg IMAGE "${IMAGE}:${VERSION}" \
+            '(.containerDefinitions[] | select(.name=="myapp")).image = $IMAGE |
+             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities)' \
+            task-def.json > new-task-def.json
+
+            NEW_TASK_DEF_ARN=\$(aws ecs register-task-definition \
+              --cli-input-json file://new-task-def.json \
+              --query 'taskDefinition.taskDefinitionArn' \
+              --output text)
+            aws ecs update-service --cluster ${CLUSTER} --service ${SERVICE} \
+              --task-definition $NEW_TASK_DEF_ARN
+            aws ecs wait services-stable --cluster ${CLUSTER} --services ${SERVICE}
+          """
         }
       }
     }
   }
   post {
     always {
-      echo 'Sending notification...'
       slackSend(
         channel: '#sns-jenkins',
         color: COLOR_MAP[currentBuild.currentResult],
-        message: "Build ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${currentBuild.currentResult}\n${env.BUILD_URL}\n"
+        message: "Build ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${currentBuild.currentResult}\n${env.BUILD_URL}"
       )
+    }
+
+    cleanup {
+      sh 'docker system prune -af'
     }
   }
 }
